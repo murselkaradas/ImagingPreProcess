@@ -9,6 +9,41 @@ Wavesurfer: This package is required for blanked odor recording. Each trial has 
 
 Breathmetrics: This package is optional  and  used for sniff processing. It is useful if you want to realign inhalation onset. Voyeur's inhalation onset can be slightly inaccurate. https://github.com/zelanolab/breathmetrics
 
+## Motion Correction
+Do necessary changes in bp_motioncorrection_mk.s file. 
+Example batch file to create slurm jobs for motion correction. Critical parameters are current directory and array range (this number should be higher than maximum tiffs need to be corrected)
+``` batch
+#SBATCH --array=0-250
+module purge
+module load matlab/R2018a
+cd /gpfs/scratch/yourID/2Pdata/SC18/220908/
+tifs=(/gpfs/scratch/yourID/2Pdata/SC18/220908/SC18_220908_field1stim*.tif)
+
+tif=${tifs[$SLURM_ARRAY_TASK_ID]}
+{
+    echo $tif
+    matlab -nodisplay -r "normcorremotioncorrection_single('$tif','Ref.tif'); exit"
+} > $tif.log 2>&
+
+```
+It relies on normcorremotioncorrection_single.m file to be in the path. Do necessaary changes in following lines so that it can reach to NoRMCorre.
+```matlab
+addpath(genpath(fullfile('/gpfs/scratch/yourID','NoRMCorre-master')));
+```
+
+Ref.tif is your best tif file that imaging session can be aligned. You  can acquire 200 frames before session starting odor/stim trials to create your own single Ref.tif file.
+
+
+## Draw ROI
+I use FIJI to  draw ROIs  
+
+https://imagej.net/software/fiji/ 
+
+1.  Be cautious when drawing and avoid including dendrites from other cells.
+
+2. After drawing all the regions of interest (ROIs), use the "combine" and then "split" functions (under properties in ROI manager window). All ROIs will be labeled  from top-to-bottom order.
+
+3. Save the ROIs with the following naming convention: mouseID_YYMMDD_session_ROISet.zip
 
 ## Odor preprocessing 
 ### Odor Imaging :  Continuous acquisition
@@ -23,11 +58,10 @@ Acquisition is discrete
 
 *Optional* : Breathmetric
 
-
 ### Only Stim
 
 ```matlab
-addpath(genpath('/gpfs/scratch/karadm01/ImagingPreProcess/'))
+addpath(genpath('/gpfs/scratch/yourID/ImagingPreProcess/'))
 %%
 tiffpath = '/gpfs/data/rinberglab/Jon/JG44524/230614';
 roifile ='JG44524_230614_glomfield4_stim';
