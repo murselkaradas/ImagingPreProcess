@@ -1,7 +1,9 @@
 # ImagingPreProcess
  2P imaging preprocess functions I used in RinbergLab
 
-It relies on the following packages:
+This preprocessing packages is written to analyze odor and light stimulation responses of mitral/tufted cells and glomeruli. I have inherited some parts  from Hirofumi Nakayama's imaging analysis packages (check  https://github.com/olfa-lab/2P_Pipeline and https://github.com/hirofuminakayama/Imaging).  
+
+Most of analysis relies on the following packages:
 
 NORMCorre: This package is used for motion correction. https://github.com/flatironinstitute/NoRMCorre
 
@@ -9,7 +11,14 @@ Wavesurfer: This package is required for blanked odor recording. Each trial has 
 
 Breathmetrics: This package is optional  and  used for sniff processing. It is useful if you want to realign inhalation onset. Voyeur's inhalation onset can be slightly inaccurate. https://github.com/zelanolab/breathmetrics
 
-## Motion Correction
+
+Steps for preprocessing:
+1.  Motion correction to register the field to reference field
+2. Drawing ROIs
+3. Calculating dFF and sniff responses for each trials
+
+At the end you will get 'fieldname_S_v73' .MAT file 
+## 1. Motion Correction
 Do necessary changes in bp_motioncorrection_mk.s file. 
 Example batch file to create slurm jobs for motion correction. Critical parameters are current directory and array range (this number should be higher than maximum tiffs need to be corrected)
 ``` batch
@@ -34,7 +43,7 @@ addpath(genpath(fullfile('/gpfs/scratch/yourID','NoRMCorre-master')));
 Ref.tif is your best tif file that imaging session can be aligned. You  can acquire 200 frames before session starting odor/stim trials to create your own single Ref.tif file.
 
 
-## Draw ROI
+## 2 . Draw ROI
 I use FIJI to  draw ROIs  
 
 https://imagej.net/software/fiji/ 
@@ -45,7 +54,7 @@ https://imagej.net/software/fiji/
 
 3. Save the ROIs with the following naming convention: mouseID_YYMMDD_session_ROISet.zip
 
-## Odor preprocessing 
+## 3. Odor preprocessing 
 ### Odor Imaging :  Continuous acquisition
 
 **Must have**: ScanImage Tiff Files  and Voyeur h5 File
