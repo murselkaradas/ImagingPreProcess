@@ -63,18 +63,22 @@ https://imagej.net/software/fiji/
 3. Save the ROIs with the following naming convention: mouseID_YYMMDD_session_ROISet.zip
 
 ## 3. Odor preprocessing 
-### Odor Imaging :  Continuous acquisition
-
-**Must have**: ScanImage Tiff Files  and Voyeur h5 File
-*Optional*: Breathmetric
-
 ### Odor Imaging :  Blanked Recording
-Acquisition is discrete
+Acquisition is discrete (this is our regular way of data acqusition )
 
 **Must have**:  ScanImage Tiff Files  and Voyeur h5 File and Wavesurfer H5 
 
-*Optional* : Breathmetric
+*Optional* : Breathmetric ('inh_realign' get_prepocessed_odordata/get_prepocessed_stimdata parameter rely on this package)
 
+```matlab
+folderpath = '/gpfs/scratch/karadm01/2Pdata/OMP02/230207';
+roifile ='OMP02_230207';
+
+fieldname = 'OMP02_230207_HighConc';
+VoyeurH5_file = 'OMP02_230207_HighConc_1_01';
+WSfieldname = 'OMP02_230207_HighConcWS';
+get_prepocessed_odordata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file, 'WSfieldname',WSfieldname,'isOdor',true)
+```
 ### Only Stim
 
 ```matlab
@@ -87,7 +91,10 @@ fieldname = 'JG44524_230614_glomfield4_stim_00001';
 VoyeurH5_file = 'JG44524_230614_glomfield4_stim_1_01';
 get_prepocessed_stimdata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file,'isOdor',false,'calculate_diff_image',true)
 ```
+### Odor Imaging :  Continuous acquisition
 
+**Must have**: ScanImage Tiff Files  and Voyeur h5 File
+*Optional*: Breathmetric
 
 All above code will generate .MAT files
 ```matlab

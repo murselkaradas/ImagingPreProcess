@@ -1,8 +1,8 @@
-function   get_prepocessed_stimdata(varargin)
+function   get_prepocessed_odordata(varargin)
 
-% This functions read beahivor/imaging data and do preprocessing. It requires at least 
+% This functions read behavior/imaging data and do necessary preprocessing. It requires at least 
 % tiff stacks, Voyeur generated H5 file and ROIs in either .zip or roi format
-% It generates two different .mat file. The MAT file end by  _S_v73.mat is smaller and 
+% It generates two different .mat file. The MAT file end by  _S_v73.mat is smaller and more 
 % compact. It has necessary data to be used later. Depends on user input it also generates heatmap
 % and dFF traces for all ROIs
 %    =========================================================================
@@ -19,7 +19,7 @@ function   get_prepocessed_stimdata(varargin)
 %     'img_format'      image format for acquisition pixel x pixel (default = [512, 512])
 %     'stim_cell'       stim cell  ROI IDs for plotting (default = [1,2,3])
 %     'dfflim'          ylim for dff plots (default = [-0.3,0.6])
-%     'inh_realign'     inhalation realign using breatmetric (default = false)'
+%     'inh_realign'     inhalation realign using breatmetric (default = true)'
 %     'usealigned_tiff' do you have aligned tiff in aligned folder (default = yes)
 %     'isWS'            use Wavesurfer (WS) available WS recording to determine frame numbers, (default = false)
 %                       it is crucial for blanked recording. Behavior box drops frame occasinally. WS more reliable.
@@ -28,13 +28,13 @@ function   get_prepocessed_stimdata(varargin)
 %                       aggressive filtering in time so a smoother function with a lower 
 %                       peak. Gain values above 0.5 will weight the predicted value of the 
 %                       pixel higher than the observed value
-%     'calculate_diff_image   '  Generaate difference image. it is half second before 
+%     'calculate_diff_image   '  Generate difference image. it is half second before 
 %                       stim/inh. onset and 1 second after. 
 %     'stimcorrection'  Stim Correction type
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% SET DEFAULT FREE PARAMETERS %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%   See also: get_prepocessed_odordata
+%   See also: get_prepocessed_stimdata
 p = inputParser;
 addParameter(p, 'tiffpath', pwd, @isstr);
 addParameter(p, 'fieldname', pwd, @isstr);
@@ -50,18 +50,17 @@ addParameter(p, 'img_format', [512,512], @isnumeric);
 addParameter(p, 'stim_cell', [1,2,3], @isnumeric);
 addParameter(p, 'dfflim', [-0.3,0.6], @isnumeric);
 
-addParameter(p, 'inh_realign', false, @islogical);
+addParameter(p, 'inh_realign', true, @islogical);
 addParameter(p, 'usealigned_tiff', true, @islogical);
 addParameter(p, 'isOdor', true, @islogical);
 addParameter(p, 'isplot', true, @islogical);
 
-addParameter(p, 'isWS', false, @islogical);
+addParameter(p, 'isWS', true, @islogical);
 addParameter(p, 'WSfieldname', pwd, @isstr);
 
 addParameter(p, 'kalman_gain', 0.5,@isnumeric);
 addParameter(p, 'calculate_diff_image', false, @islogical);
 
-addParameter(p, 'stimcorrection', "filloutliers",@isstr);
 
 parse(p,varargin{:});
 
@@ -79,12 +78,11 @@ stim_cell = p.Results.stim_cell;
 
 isOdor = p.Results.isOdor;
 isplot = p.Results.isplot;
-
+isWS = p.Results.isWS;
 dfflim = p.Results.dfflim;
 WSfieldname = p.Results.WSfieldname;
 kalman_gain = p.Results.kalman_gain;
 calculate_diff_image = p.Results.calculate_diff_image;
-stimcorrection = p.Results.stimcorrection;
 
 p.Results
  if img_format(1)==256
@@ -162,8 +160,10 @@ datamean = zeros(img_format);
 Fluo_cell = [];
 Nframestart= 0 ;
 datafull = [];
+Fluo_cell_stimcorrected = [];
+Fluo_cell_Kalman =[];
 if filenum == 0
-     error('Error. \nNo tiff file found.')
+     error('Error. \n No tiff file found.')
 else
     disp(strcat(num2str(filenum),' tiff files will be loaded'));
     for i = 1: filenum
@@ -174,60 +174,16 @@ else
         end
         data= double(tiff_loaded);
         Nframe = size(data,3);
-        datamean = datamean + mean(data,3);
-        Fluo_cell =[Fluo_cell, double(cellMask_vec')*double(reshape(data,[img_format(1)*img_format(2),Nframe]))];
-        
+        Fluo_trial = double(cellMask_vec')*double(reshape(data,[img_format(1)*img_format(2),Nframe]));
+        datamean = datamean + mean(data,3)/filenum;
+        Fluo_cell =[Fluo_cell, Fluo_trial];
+        Fluo_raw = zeros(1,num_cell,size(Fluo_trial,2));
+        Fluo_raw(1,:,:) = Fluo_trial;
+        Fluo_cell_Kalman = [Fluo_cell_Kalman,squeeze(Kalman_Stack_Filter(double(Fluo_raw),kalman_gain,0.5))];
+        Fluo_cell_stimcorrected=[Fluo_cell_stimcorrected Fluo_cell];
     end
 end
-%% STIM artefact correction
-disp('Filtering traces without Stim Artefacts frames');
-stimframe_perroi= [];
-Voyeur_stim_frame = Data.stim_frame;
-Voyeur_stim_frame(Voyeur_stim_frame ==0) = [];
-Nstack = size(Fluo_cell,2);
-%in case, tiff file is shorter than Voyeur stim
-stim_frame_tifflimit = Voyeur_stim_frame(Voyeur_stim_frame<=Nstack);
-for k = 1:num_cell
-    stimframe_perroi(k,:) = findstimframe(squeeze(Fluo_cell(k,:,:)),stim_frame_tifflimit,1);
-    Fluo_substracted{k} = Fluo_cell(k,:);
-end
-stimframes_allroi = findmostrepeatedstims(stimframe_perroi);
-stim_frame_mod = mode(stimframes_allroi,1);
-if stimcorrection == "filloutliers"
-    Fluo_raw = Fluo_cell;
-    Nframes = size(Fluo_cell,2);
-    for cellid =1:num_cell
-        for stimid = 1: length(stim_frame_mod)
-            stimbound = stim_frame_mod(stimid)-round(fps/2):stim_frame_mod(stimid)+round(3*fps/2);
-            if stimbound(1)>1 && stimbound(end)<Nframes
-                dff_stimbound = Fluo_raw(cellid,stimbound);
-                outlier_removed = filloutliers(dff_stimbound,"pchip","percentiles",[3 97]);      
-                Fluo_raw(cellid,stimbound(2:end-1)) = outlier_removed(2:end-1); %edges can be problematic if outliers are there
-            end
-        end
-        fluotemp = reshape(Kalman_Stack_Filter(Fluo_raw(cellid,:) , kalman_gain, 0.5),1,[]);
-        Fluo_cell_Kalman(cellid,:)  = fluotemp;
-        Fluo_cell_stimcorrected(cellid,:) = Fluo_raw(cellid,:);
-    end
-    disp('FillOutliers is used to correct stim frames.');
-else
-    stims = cat(1, stim_frame_mod-1, stim_frame_mod, stim_frame_mod+1);
-    stim_frames = stims(:);
-    Fluo_cell_Kalman = Fluo_cell;
-    Fluo_cell_stimcorrected = Fluo_cell;
-    for j =1:num_cell
-        Fluo_substracted{j}(stim_frames) = [];
-        Fluo_raw = reshape(Fluo_substracted{j},1,1,[]);
-        fluotemp = reshape(Kalman_Stack_Filter(Fluo_raw , kalman_gain, 0.5),1,[]);
-        fluotemp1 = insertstimframeback(fluotemp,Fluo_cell(j,:), stim_frames,[]);
-        Fluo_cell_Kalman(j,:)  = fluotemp1;
-        Fluo_cell_stimcorrected(j,:) = insertstimframeback(squeeze(Fluo_raw)', Fluo_cell(j,:), stim_frames,[]);
-    end
-    disp('Kalman Filtered without stim artefacts.Stim Frames are inserted back');
-
-end
-%%
-clear data1 data  Fluo_substracted Fluo_raw fluotemp option
+clear  data  Fluo_substracted Fluo_raw fluotemp option tiff_loaded
 
 %% SAVE AVG tiff
 img = repmat(imadjust(mat2gray(datamean)),1,1,3)*0.8;
@@ -253,29 +209,31 @@ else
     inh_onset = Data.inh_onset + mode(Data.laserontime- Data.inh_onset);
     disp('Using Laser onset time');
 end
-% inh_onset = Data.inh_onset;
 up_sampling_fac=(1000/fps);
 
-%% Kalman  Filters result
+ind = 1;
 FKalman = [];
 dffKalman = [];
 meanAllKalman = [];
-ind =1;
-img_df = [];
+Inh_frame_all = [];
 for tr=1:length(inh_onset)
-    [~,inh_frame]=min(abs(frametrigger-double(inh_onset(tr))));%frame in which inh_onset is included
-    time_diff = frametrigger(inh_frame)-double(inh_onset(tr));
+    Frame_offset = sum(Data.Voyeur_frame_numbers(1:tr-1));
+    inh = inh_onset(tr);
+	%% Consider to change here use either first or second line. I mostly ysed first.
+    inh_frame=find(frame_trigger_trial{tr}<inh, 1, 'last' ) + Frame_offset;%frame in which inh_onset is included
+	% [~,inh_frame]=min(abs(frametrigger-double(inh_onset(tr))))+ Frame_offset;
+	
     if ~isempty(inh_frame)
+        Inh_frame_all(tr)= inh_frame;
         sv_frame_range=inh_frame-pre_inh:inh_frame+post_inh-1;
-        inh_diff = abs(frametrigger(inh_frame)-double(inh_onset(tr)));
-        if max(sv_frame_range) < size(Fluo_cell,2) && (inh_frame>pre_inh) && inh_diff<1e3
-            fcellKalman=Fluo_cell_Kalman(:,sv_frame_range);
-            baseline_frame=pre_inh-32:pre_inh-2; % be conservative
+        inh_diff = frametrigger(inh_frame)-double(inh);
+        if max(sv_frame_range) < size(Fluo_cell,2) && (inh_frame>pre_inh) && abs(inh_diff)<1e3
+            fcellKalman=Fluo_cell_Kalman(:,sv_frame_range); %upsample imaging data
+            baseline_frame=pre_inh-32:pre_inh-2; %
             dffKalman(:,:,ind)=(fcellKalman-mean(fcellKalman(:,baseline_frame),2))./mean(fcellKalman(:,baseline_frame),2);
             FKalman(:,:,ind) = fcellKalman;
-            trials_read(tr)=true;
+            trials_read(tr) = true;
             meanAllKalman(:,ind) = (mean(fcellKalman(:,baseline_frame),2));
-            
             if calculate_diff_image
                 img_trial = double(datafull(:,:,sv_frame_range));
                 img_baseline = (mean(img_trial(:,:,baseline_frame),3));
@@ -284,12 +242,12 @@ for tr=1:length(inh_onset)
             ind = ind+1;
         else
             trials_read(tr)=false;
-            fprintf('trial %d inh_frame was not included in tiff stack\n',tr)
+            fprintf('trial %d inh_frame was not included in tiff stack',tr)
 
         end
     else
         trials_read(tr)=false;
-        fprintf('trial %d inh_frame was not included in tiff stack\n',tr)
+        fprintf('trial %d inh_frame was not included in tiff stack',tr)
     end
     
 end
@@ -428,6 +386,50 @@ if isplot
     close all
 
 end
+
+%%% Read PID data
+Ntrials = sum(trials_read)
+PIDmeas = zeros(Ntrials,7*wsrate*1e3);
+kk = 1
+trials_read_2 = trials_read(2:end)
+for i = 1:wsNtrials
+    if trials_read(i)
+        an = eval(sprintf('wsdata.sweep_%04d.analogScans',i));
+        framediff= find(diff(an(:,1))>2);  %% Frame trigger is channel 1
+        FVdiff= find(diff(an(:,FVChannel))>2);  %% Frame trigger is channel 1
+        if isempty(FVdiff)
+            FVdiff1 = 65e3;
+        elseif ~isempty(FVdiff)
+           [M,I]= (min(abs(FVdiff)));
+           FVdiff1 = FVdiff(I);
+        else
+           FVdiff1 = FVdiff(1);
+        end
+        startPID = FVdiff1 - (wsdata.header.AcquisitionSampleRate)*3;
+        endPID = FVdiff1 +(wsdata.header.AcquisitionSampleRate)*4;
+        if startPID<0
+            PIDmeas(kk,:) = vertcat(an(1,PIDChannel)*ones(abs(startPID)+1,1),an(1:endPID-1,PIDChannel));
+        else
+            PIDmeas(kk,:) = an(startPID:endPID-1,PIDChannel);
+        end
+        kk = kk + 1
+    end
+end
+
+fig3 = figure2('PID');
+for i = 1: size(OdorInfo.odors,1)
+    ii = index(i);
+    figure(fig3.Number)
+    subplot(p(1),p(2),ii)
+    pid_plot = downsample(PIDmeas(OdorInfo.odorTrials{i},:)',20);
+    plot(pid_plot, 'LineWidth',2)
+    title(OdorInfo.odors{i})
+    xlabel('#')
+    ylabel('PID_voltage')
+    legend()
+end
+saveas(fig3,strcat(fieldname, '_PID', '.png'))
+
 %% SAVE everything in workspace, it is usefull in some cases
 save(strcat(fieldname, '.mat'));
 
@@ -439,6 +441,9 @@ Session.fieldname = fieldname;
 for i = 1: size(OdorInfo.odors,1)
     Session.OdorResponse{i} = permute(dffKalman(:,:,OdorInfo.odorTrials{i}),[2,1,3]);
     Session.blockTrials{i} = ones(length(OdorInfo.odorTrials{i}),1);
+    if exist('PIDmeas','var')
+        Session.PID{i} = downsample(PIDmeas(OdorInfo.odorTrials{i},:)',20);
+    end
 end
 if calculate_diff_image
    Session.diff_image = img_df_percond;
@@ -447,6 +452,8 @@ Session.UniqueConds = cellstr(OdorInfo.odors);
 Session.OdorTrials = OdorInfo.odorTrials;
 Session.Sniffs = Sniff_trial';
 Session.CellMask = cellMask_vec;
+Session.InhFrames = Inh_frame_all;
+Session.Infos.OdorDuration = OdorDuration;
 
 Session.Infos.fps = fps;
 Session.Infos.ImgFormat = img_format;
