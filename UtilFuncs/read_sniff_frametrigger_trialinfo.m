@@ -47,6 +47,12 @@ catch
     error('%s not found in %s',h5, path_used)
 end
 %Need to check if this manipulation is ok for 2p data
+
+% DMTS structure save 1st inh as inh_onset_1st
+if isfield(data, 'inh_onset_1st')
+    data.inh_onset = data.inh_onset_1st;
+    data.fvOnTime = data.fvOnTime_1st;
+end    
 inh_onset=double(data.inh_onset);
 num_trial=length(inh_onset);
 

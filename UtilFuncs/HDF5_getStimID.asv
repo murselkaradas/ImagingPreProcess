@@ -29,7 +29,7 @@ PulseLat = H5.pulseOnsetDelay_1;
 try 
     PatternID = deblank(string((H5.patternid)'));
 catch
-    warning('No patternid field in H5 file. Using stimtype');
+    warning('No patternid field in H5 file. Using Laser2 Amplitude_2');
     PatternID =  deblank(string((H5.stimtype)'));
 end
 OffDur = H5.pulseOffDur_1;

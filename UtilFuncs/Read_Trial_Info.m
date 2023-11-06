@@ -1,62 +1,79 @@
-function [Sniff,Sniff_smooth,frame_trigger_trial,frame_trigger,data,Sniff_time]=Read_Trial_Info(h5,path_used,pre,post,inh_detect,fps,wsFrameNumbers, pmtblank_dur)
-%This function is to extract sniff trace of individual trials
-%Modified for use in 2p imaging
-%Sniff(trial x ms): sniff traces of each trial
-% Sniff_smooth: smoothed version of sniff
-% frame_trigger_trial : Frame trigger times for each trial
-%frametrigger: frame triggers for tif stack (half the number of total
-%frames in tiff stack because both green and red channel is recorded at
-%each triggering)
-%Sniff_time(trial x ms): time in data file for corresponding time bins in
-%Sniff
-%
+function [Sniff,Sniff_smooth,frame_trigger_trial,frame_trigger,Voyeurdata,Sniff_time]=Read_Trial_Info(h5,path_used,varargin)
+
+% This functions read behavior/imaging data and do preprocessing for frames and sniffs trials. It requires at least 
+% Voyeur generated H5 file 
+%   [Sniff,Sniff_smooth,frame_trigger_trial,frame_trigger,data,Sniff_time]=Read_Trial_Info(h5,path_used,varargin)
+%   Read_Trial_Info reads h5 file and extract sniff traces, inhalation
+%   timing, frametrigger, and other trial information
+%   Input:
+%       h5: h5 file name
+%       path_used: path where h5 file is located
+%       varargin:
+%           pre: time before inhalation onset (default: 1000ms)
+%           post: time after inhalation onset (default: 1000ms)
+%           inh_detect: true/false, if true, it detects inhalation onset
+%           using sniff trace (default: true)
+%           fps: frame per second (default: 30)
+%           pmtblank_dur: pmt blank duration (default: 16ms)
+%           wsFrameNumbers: frame numbers from wavesurfer (default: [])
+%   Output:
+%       Sniff: sniff traces for each trial
+%       Sniff_smooth: sniff traces after baseline correction
+%       frame_trigger_trial: frametrigger for each trial
+%       frame_trigger: frametrigger for all trials
+%       Voyeurdata: trial information
+%       Sniff_time: time for each sniff trace
+
 % Mursel Karadas 2022
 
-%Duration before inahlation to be analyzed
-if ~exist('pre','var')
-    pre=1000;
-end
+%   See also: get_prepocessed_odordata
+p = inputParser;
+addParameter(p, 'pre', 1000, @isnumeric);
+addParameter(p, 'post', 1000, @isnumeric);
+addParameter(p, 'inh_detect', true,@islogical);
+addParameter(p, 'fps',30, @isnumeric);
+addParameter(p, 'pmtblank_dur', 16, @isnumeric);
+addParameter(p,'wsFrameNumbers',[],@isnumeric);
 
-%Duration after inhalation to be analyzed
-if ~exist('post','var')
-    post=1000;
-end
+parse(p,varargin{:});
+pre = p.Results.pre;
+post = p.Results.post;
+inh_detect = p.Results.inh_detect;
+fps = p.Results.fps;
+pmtblank_dur = p.Results.pmtblank_dur;
+wsFrameNumbers = p.Results.wsFrameNumbers;
 
-if ~exist('inh_detect','var')
-    %Whether or not detect inhalation by threshold crossing
-    inh_detect=true;
-end
+p.Results
 
-if ~exist('fps','var')
-    % Fps is given or notS
-    fps=30;
-end
-if ~exist('pmtblank','var')
-    pmtblank_dur = 16; 
-end
-if ~exist('wsFrameNumbers','var')
-    Blanked_recording = false;
-else
-    Blanked_recording = true;
-
-end
 path_orig=pwd;
 cd(path_used)
 
 try
-    data=h5read(h5,'/Trials');
+    Voyeurdata=h5read(h5,'/Trials');
 catch
     error('%s not found in %s',h5, path_used)
 end
-%Need to check if this manipulation is ok for 2p data
-inh_onset=double(data.inh_onset);
+%DMTS task has different field names
+if isfield(Voyeurdata, 'inh_onset_1st')
+    Voyeurdata.inh_onset = Voyeurdata.inh_onset_1st;
+    Voyeurdata.fvOnTime = Voyeurdata.fvOnTime_1st;
+end
+
+% check if there is any wsFrameNumbers coming from wavesurfer
+if isempty(wsFrameNumbers)
+    Blanked_recording = false;
+else
+    Blanked_recording = true;
+end
+%Need to check if this manipulation is ok for 2p Voyeurdata
+inh_onset=double(Voyeurdata.inh_onset);
 num_trial=length(inh_onset);
 
 h_info=h5info(h5);
 h_info=h_info.Groups;
 % Keys is Number_of_trials x 1 
 Keys={h_info.Name};%h5 file from 2p rig doesn't record trial0 analog signal
-fvOnTime=data.fvOnTime;
+fvOnTime=Voyeurdata.fvOnTime;
 %%
 %obtain frametrigger
 record_onset=zeros(size(inh_onset));
@@ -78,16 +95,24 @@ for i=1:num_trial
     end
 end
 Blanked_Duration = 1e3;  % To identify each trial since voyeur start trial by FV opening.
-%% Detecting missing frametrigger and fill the missing frametrigger using
-%linear interploation
-%some frametriggers are missed
-%some other frametriggers are replaced by later time (usually 300 - 400ms
-%later). This make the same frametrigger happing twice.
-%Remove duplicate
+
+%% Frame Trigger Correction
+% This section of the code is dedicated to detecting and correcting missing frame triggers.
+
+% Frame triggers can occasionally be missed due to various reasons. This code identifies such instances.
+
+% In some cases, frame triggers are not missed, but are instead replaced by a later time (typically delayed by 300 - 400ms). 
+% This results in the same frame trigger occurring twice.
+
+% The code also handles these duplicates by removing them, ensuring each frame trigger is unique.
+
+% Check for duplicate frame triggers
 if length(frame_trigger)~=length(unique(frame_trigger))
     fprintf('duplicated frametrigger \n')
 end
-frametrigger2 = sort(unique(frame_trigger));%If there is no duplicates, frametrigger2=frametrigger;
+
+% Remove duplicates and sort the frame triggers
+frametrigger2 = sort(unique(frame_trigger));
 if Blanked_recording
     Frame_endindices = [find(diff(frametrigger2)>Blanked_Duration); length(frametrigger2)];
     if length(wsFrameNumbers) >1
@@ -156,17 +181,17 @@ if Blanked_recording
     frame_trigger_trial = {};
     frames = frametrigger2;
     N_tiff = length(VoyeurFrameNumbers);
-    data.Voyeur_frame_numbers = [];
+    Voyeurdata.Voyeur_frame_numbers = [];
     for i = 1: N_tiff
         Nf = VoyeurFrameNumbers(end-i+1);
         frames_i = frames(end-Nf+1:end);
         for j = 1:num_trial
-            [val(j),frame_diff(j)] = min(abs(frames_i -double(data.starttrial(j))));
+            [val(j),frame_diff(j)] = min(abs(frames_i -double(Voyeurdata.starttrial(j))));
         end
         [~,trial_id] = min(val); 
         frame_trigger_trial{trial_id} = frames_i;
         frames(end-Nf+1:end) = [];
-        data.Voyeur_frame_numbers(trial_id) = size(frames_i,1);
+        Voyeurdata.Voyeur_frame_numbers(trial_id) = size(frames_i,1);
     end
 
 else
@@ -256,8 +281,8 @@ sniff_all=[int16(zeros((5*tot_pre_post),1));sniff_all;int16(zeros((5*tot_pre_pos
 %%
 %find real inhalation onset based on the threshold crossing of sniff signal
 num_trial=size(Sniff,1);
-inh_onset=data.inh_onset;
-fvOnTime=data.fvOnTime;
+inh_onset=Voyeurdata.inh_onset;
+fvOnTime=Voyeurdata.fvOnTime;
 
 %Check sniff alignment to fvOnTime or inh_onset
 Sniff(Sniff_time==0)=NaN;
@@ -274,12 +299,12 @@ fv_bin(trial_id) = bin_fv;
 fv_bin = insert_element(fv_bin,locs_NaN, zeros(length(locs_NaN),1));
 
 %% Find Stim trigger
-stim_time = inh_onset + data.pulseOnsetDelay_1;
+stim_time = inh_onset + Voyeurdata.pulseOnsetDelay_1;
 for i = 1:num_trial-1
     %stim_frame(i)=find(frame_trigger<stim_time(i+1), 1, 'last');%frame in which inh_onset is included
-    %if data.amplitude_1(i) >0
-        [data.stim_diff(i), ind] = min(abs(double(frame_trigger)+fps/2.0 -double(stim_time(i+1)- pmtblank_dur/2.0)));
-        data.stim_frame(i) = ind;
+    %if Voyeurdata.amplitude_1(i) >0
+        [Voyeurdata.stim_diff(i), ind] = min(abs(double(frame_trigger)+fps/2.0 -double(stim_time(i+1)- pmtblank_dur/2.0)));
+        Voyeurdata.stim_frame(i) = ind;
     %end
 end
 %% Need to change this it causes problem in inh detection
@@ -293,7 +318,7 @@ for i=1:num_trial
     end
 end
 inh_bin2= inh_bin;
-%%
+%% Realign inhalation traces using breathmetrics
 if inh_detect
     for kk = 2:num_trial
         kk
@@ -305,12 +330,12 @@ if inh_detect
         %fig = bmObj.plotFeatures({'onset'});
     end
 
-    data.inh_onset_voyeur=data.inh_onset;
-    inh_onset=data.inh_onset+int32(inh_bin2(:)-inh_bin(:));
-    data.inh_onset=inh_onset;
+    Voyeurdata.inh_onset_voyeur=Voyeurdata.inh_onset;
+    inh_onset=Voyeurdata.inh_onset+int32(inh_bin2(:)-inh_bin(:));
+    Voyeurdata.inh_onset=inh_onset;
     
 else
-    data.inh_onset_voyeur=data.inh_onset;
+    Voyeurdata.inh_onset_voyeur=Voyeurdata.inh_onset;
 end
 %%
 inh_inSniff=inh_onset-record_onset(1);
@@ -323,16 +348,16 @@ for i=2:num_trial
     end
 end
 Sniff=single(Sniff2);
-data.frametrigger = frame_trigger;
-data.fv_bin = fv_bin;
+Voyeurdata.frametrigger = frame_trigger;
+Voyeurdata.fv_bin = fv_bin;
 Sniff_smooth = Sniff;
 for i=2:num_trial
     bmObj = breathmetrics(-1*Sniff(i,:)', 1e3, 'rodentAirflow');
     bmObj.estimateAllFeatures(1,'simple', 0, 1);
     Sniff_smooth(i,:) = -1*bmObj.baselineCorrectedRespiration;
     [~, index] = min(abs(bmObj.inhaleOnsets-2001));
-    data.pre_inhs{i} = bmObj.inhaleOnsets(1:index-1);
-    data.post_inhs{i} = bmObj.inhaleOnsets(index:end);
+    Voyeurdata.pre_inhs{i} = bmObj.inhaleOnsets(1:index-1);
+    Voyeurdata.post_inhs{i} = bmObj.inhaleOnsets(index:end);
 end
 cd(path_orig);
 

@@ -12,23 +12,12 @@ set(0,'DefaultTextInterpreter','none')
 addpath(genpath('/gpfs/scratch/karadm01/ImagingPreProcess/'))
 %%
 
-folderpath = '/gpfs/scratch/karadm01/2Pdata/OMP02/230207';
-roifile ='OMP02_230207';
+folderpath = 'G:/.shortcut-targets-by-id/1Z9x_DTUNRkFooVBWp3g69Z9A7D8lPZJB/sampleData/130723';
+roifile ='mouse0049_230713_triangle';
 
 
-fieldname = 'OMP02_230207_HighConc';
-VoyeurH5_file = 'OMP02_230207_HighConc_1_01';
-WSfieldname = 'OMP02_230207_HighConcWS';
-get_prepocessed_odordata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file, 'WSfieldname',WSfieldname,'isOdor',true,'usealigned_tiff', false)
+fieldname = 'mouse0049_230713_triangle';
+VoyeurH5_file = 'mouse0049_1_01_D2023';
+WSfieldname = 'mouse0049_230713_triangleWS';
+get_prepocessed_odordata('inh_realign',false,'tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file, 'WSfieldname',WSfieldname,'isOdor',true,'usealigned_tiff', true)
 
-
-fieldname = 'OMP02_230207_MidConc';
-VoyeurH5_file = 'OMP02_230207_MidConc_1_01';
-WSfieldname = 'OMP02_230207_MidConcWS';
-get_prepocessed_odordata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file, 'WSfieldname',WSfieldname,'isOdor',true,'usealigned_tiff', false)
-
-
-fieldname = 'OMP02_230207_LowConc';
-VoyeurH5_file = 'OMP02_230207_LowConc_1_01';
-WSfieldname = 'OMP02_230207_LowConcWS';
-get_prepocessed_odordata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file, 'WSfieldname',WSfieldname,'isOdor',true,'usealigned_tiff', false)
