@@ -81,7 +81,7 @@ for i=1:num_trial
         [~,frame_fv(i)] = min(abs( frame_trigger -double(fvOnTime(i))));
     end
 end
-
+data.raw_frame_triggers = frame_trigger;
 %% Detecting missing frametrigger and fill the missing frametrigger using
 %linear interploation
 %some frametriggers are missed
@@ -92,6 +92,10 @@ if length(frame_trigger)~=length(unique(frame_trigger))
     fprintf('duplicated frametrigger \n')
 end
 frametrigger2 = sort(unique(frame_trigger));%If there is no duplicates, frametrigger2=frametrigger;
+if any(frametrigger2 ==0)
+    frametrigger2(frametrigger2==0) = [];
+    fprintf('There is invalid frame trigger times \n')
+end
 if Blanked_recording
     Frame_endindices = [find(diff(frametrigger2)>1e3); length(frametrigger2)];
     if length(wsFrameNumbers) >1

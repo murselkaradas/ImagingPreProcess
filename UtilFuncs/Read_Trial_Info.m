@@ -110,9 +110,12 @@ Blanked_Duration = 1e3;  % To identify each trial since voyeur start trial by FV
 if length(frame_trigger)~=length(unique(frame_trigger))
     fprintf('duplicated frametrigger \n')
 end
-
 % Remove duplicates and sort the frame triggers
 frametrigger2 = sort(unique(frame_trigger));
+if any(frametrigger2 ==0)
+    frametrigger2(frametrigger2==0) = [];
+    fprintf('There is invalid frame trigger times \n')
+end
 if Blanked_recording
     Frame_endindices = [find(diff(frametrigger2)>Blanked_Duration); length(frametrigger2)];
     if length(wsFrameNumbers) >1
