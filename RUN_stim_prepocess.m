@@ -20,7 +20,7 @@ fieldname = 'JG41851_240520_field1_00001';
 VoyeurH5_file = 'JG41851_240520_field1_1_01_D2024_5_20T17_57_7_odor';
 WSfieldname = 'OMP02_230207_HighConcWS';
 
-get_prepocessed_stimdata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file,'isOdor',false,'calculate_diff_image',true,...
+get_prepocessed_stimdata('tiffpath',folderpath, 'fieldname', fieldname, 'roiname', roifile,'VoyeurH5_name', VoyeurH5_file,'isOdor',false,'calculate_diff_image',false,...
    'isWS',false, 'inh_realign',false,'pre',1000,'post',2000,'usealigned_tiff',false)
 
 %%
