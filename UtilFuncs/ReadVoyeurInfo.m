@@ -87,7 +87,7 @@ for i=1:num_trial
             if ~isempty(pos_lost)
                 for k=1:length(pos_lost)
                     j = pos_lost(k);
-                    fprintf('trial %d, %d-th packet lost',i,trial_subind(j))
+                    fprintf('trial %d, %d-th packet lost',i,trial_subind(j));
                     sniffcell{trial_subind(j)}=[int16(zeros((packet_sent_time(j)-packet_sent_time(j-1))-length(sniffcell{trial_subind(j)}),1));sniffcell{trial_subind(j)}];
                 end
                 
@@ -131,7 +131,7 @@ inh_bin = insert_element(inh_bin,locs_NaN, zeros(length(locs_NaN),1));
 % inh_bin=findfirst(Sniff_time==double(inh_onset),2);
 [bin_fv,trial_id]=find(Sniff_time'==double(fvOnTime)',length(fvOnTime),'first');
 % fv_bin=findfirst(Sniff_time==double(fvOnTime),2);
-fv_bin = 1950*ones(length(fvOnTime),1);
+fv_bin = 1920*ones(length(fvOnTime),1);
 fv_bin(trial_id) = bin_fv;
 fv_bin = insert_element(fv_bin,locs_NaN, zeros(length(locs_NaN),1));
 
@@ -150,13 +150,22 @@ inh_bin2= inh_bin;
 %%
 if inh_detect
     for kk = 2:num_trial
-        kk
         respiratoryTrace = Snifftemp(kk,:);
         bmObj = breathmetrics(-1*respiratoryTrace', 1e3, 'rodentAirflow');
-        bmObj.estimateAllFeatures(1,'simple', 0, 1);
+        bmObj.estimateAllFeatures(1,'simple', 0, 0);
         [~, index] = min(abs(bmObj.inhaleOnsets-2001));
-        inh_bin2(kk) = bmObj.inhaleOnsets(index);
-        %fig = bmObj.plotFeatures({'onset'});
+        if bmObj.inhaleOnsets(index)< fv_bin(kk)
+            inh_bin2(kk) = bmObj.inhaleOnsets(index+1);
+        else
+            inh_bin2(kk) = bmObj.inhaleOnsets(index);
+        end
+        
+        if (inh_bin2(kk)-inh_bin(kk))>200
+            resp_after_fv = diff(bmObj.smoothedRespiration(fv_bin(kk)+50:fv_bin(kk)+1000));
+            [pks,locs,widths,proms] = findpeaks(resp_after_fv,'MinPeakProminence',6,'Annotate','extents');
+            fprintf('trial %d was not corrected since new inh %d was ms away, using findpeaks inh.\n',kk,(inh_bin2(kk)-inh_bin(kk)))
+            inh_bin2(kk) = fv_bin(kk) + 50 + locs(1);
+        end
     end
 
     data.inh_onset_voyeur=data.inh_onset;
@@ -181,7 +190,7 @@ data.fv_bin = fv_bin;
 Sniff_smooth = Sniff;
 for i=2:num_trial
     bmObj = breathmetrics(-1*Sniff(i,:)', 1e3, 'rodentAirflow');
-    bmObj.estimateAllFeatures(1,'simple', 0, 1);
+    bmObj.estimateAllFeatures(1,'simple', 0,0);
     Sniff_smooth(i,:) = -1*bmObj.baselineCorrectedRespiration;
     [~, index] = min(abs(bmObj.inhaleOnsets-2001));
     data.pre_inhs{i} = bmObj.inhaleOnsets(1:index-1);

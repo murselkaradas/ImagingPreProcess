@@ -110,6 +110,7 @@ Blanked_Duration = 1e3;  % To identify each trial since voyeur start trial by FV
 if length(frame_trigger)~=length(unique(frame_trigger))
     fprintf('duplicated frametrigger \n')
 end
+
 % Remove duplicates and sort the frame triggers
 frametrigger2 = sort(unique(frame_trigger));
 if any(frametrigger2 ==0)

@@ -40,7 +40,7 @@ if sortflow
         olfa2_flow = H5.olfas0x3Aolfa_20x3Amfc_0_flow;
     end
 else
-    olfa0_flow = H5.olfas0x3Aolfa_00x3Amfc_1_flow.*dilution_factor.*H5.olfas0x3Aolfa_00x3Avialconc;
+    olfa0_flow = H5.olfas0x3Aolfa_00x3Amfc_0_flow.*dilution_factor.*H5.olfas0x3Aolfa_00x3Avialconc;
     olfa1_flow = H5.olfas0x3Aolfa_10x3Amfc_0_flow.*dilution_factor.*H5.olfas0x3Aolfa_10x3Avialconc;
     if any(ismember(fields(H5),'olfas0x3Aolfa_20x3Aodor'))
         olfa2_flow = H5.olfas0x3Aolfa_20x3Amfc_0_flow.*dilution_factor.*H5.olfas0x3Aolfa_20x3Avialconc;
@@ -72,11 +72,12 @@ else
 end
 
 olfa_odors = olfa_odor_(trials_read);
-odors = unique(olfa_odors);
+[odors, ~, odor_idvec] = unique(olfa_odors);
 for idx = 1:length(odors)
     odorTrials{idx} = find(olfa_odors==odors(idx));
 end
 
 odorInfo.odors = odors;
 odorInfo.odorTrials = odorTrials;
+odorInfo.odor_idvec = odor_idvec;
 end
