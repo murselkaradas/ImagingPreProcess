@@ -63,7 +63,7 @@ addParameter(p, 'calculate_diff_image', false, @islogical);
 
 addParameter(p,'correct_stim', true, @islogical);
 addParameter(p, 'stimcorrection', "filloutliers",@isstr);
-addParameter(p, 'external_trigger_clicked', true,@islogical);
+
 parse(p,varargin{:});
 
 tiffpath = p.Results.tiffpath;
@@ -88,7 +88,7 @@ isWS = p.Results.isWS;
 calculate_diff_image = p.Results.calculate_diff_image;
 stimcorrection = p.Results.stimcorrection;
 correct_stim = p.Results.correct_stim;
-external_trigger_clicked = p.Results.external_trigger_clicked;
+
 p.Results
  if img_format(1)==256
     fps =58.20;
@@ -142,9 +142,23 @@ else
 
 end
 odor_duration = mean(Data.fvdur)/1e3;
-figure(1);imagesc(sniff_smooth,[min(sniff_smooth(:))/1.5,max(sniff_smooth(:))/1.5]);
-xlim([1500,3000])
+figure(1);
+subplot(2,1,1);
+% Create x-axis values
+x_values = linspace(-pre, post, size(sniff_smooth, 2));
+imagesc(x_values, 1:size(sniff_smooth, 1), sniff_smooth, [min(sniff_smooth(:))/1.5,max(sniff_smooth(:))/1.5]);
+xlim([-1*pre,post])
 colorbar
+subplot(2,1,2);
+options.x_axis = linspace(-pre,post, pre+post);
+options.color_area = [128 193 219]./255;
+options.color_line = 'r';
+options.alpha = 0.5;
+options.line_width =2;
+options.error = 'sem';
+plotareaerrorbar(sniff_smooth, gcf, options)
+xlabel('Time (ms)')
+box off
 savefig(strcat(fieldname, '_sniff', '.fig'))
 saveas(figure(1),strcat(fieldname, '_sniff', '.png'))
 clear n an
@@ -162,7 +176,6 @@ tiff_filenames = {tiff_names.name};
 tiff_foldername = {tiff_names.folder};
 filenum = size(tiff_names,1);
 datamean = zeros(img_format);
-data_time = [];
 Fluo_cell = [];
 Nframestart= 0 ;
 datafull = [];
@@ -179,7 +192,6 @@ else
         data= double(tiff_loaded);
         Nframe = size(data,3);
         datamean = datamean + mean(data,3);
-        %data_time = [data_time, mean(mean(data,1),1)];
         Fluo_cell =[Fluo_cell, double(cellMask_vec')*double(reshape(data,[img_format(1)*img_format(2),Nframe]))];
         
     end
@@ -254,14 +266,6 @@ options.overwrite = true;
 saveastiff(int16(datamean),strcat(fieldname,'_AVG.tif'), options)
 disp('Avg tiff file has been saved');
 
-if ~external_trigger_clicked
-   Nremove = sum(Data.raw_frame_triggers(1:end-100) ==0);
-   if Nremove > 0
-       fprintf('%d Tiffs were not included processing\n',Nremove );
-       Fluo_cell_Kalman = Fluo_cell_Kalman(:,Nremove+1:end);
-       datafull = datafull(:,:,Nremove+1:end);
-   end
-end
 %% Find Included Trials
 Nframe = size(frametrigger,1);
 pre_inh=round(pre*fps/1e3);
@@ -288,14 +292,14 @@ meanAllKalman = [];
 ind =1;
 img_df = [];
 for tr=1:length(inh_onset)
-    [~,inh_frame(tr)]=min(abs(frametrigger-double(inh_onset(tr))));%frame in which inh_onset is included
-    time_diff = frametrigger(inh_frame(tr))-double(inh_onset(tr));
-    if ~isempty(inh_frame(tr))
-        sv_frame_range=inh_frame(tr)-pre_inh:inh_frame(tr)+post_inh-1;
-        inh_diff = abs(frametrigger(inh_frame(tr))-double(inh_onset(tr)));
-        if max(sv_frame_range) < size(Fluo_cell,2) && (inh_frame(tr)>pre_inh) && inh_diff<1e3
+    [~,inh_frame]=min(abs(frametrigger-double(inh_onset(tr))));%frame in which inh_onset is included
+    time_diff = frametrigger(inh_frame)-double(inh_onset(tr));
+    if ~isempty(inh_frame)
+        sv_frame_range=inh_frame-pre_inh:inh_frame+post_inh-1;
+        inh_diff = abs(frametrigger(inh_frame)-double(inh_onset(tr)));
+        if max(sv_frame_range) < size(Fluo_cell,2) && (inh_frame>pre_inh) && inh_diff<1e3
             fcellKalman=Fluo_cell_Kalman(:,sv_frame_range);
-            baseline_frame=pre_inh-32:pre_inh-2; % be conservative
+            baseline_frame=pre_inh-16:pre_inh-2; % be conservative
             dffKalman(:,:,ind)=(fcellKalman-mean(fcellKalman(:,baseline_frame),2))./mean(fcellKalman(:,baseline_frame),2);
             FKalman(:,:,ind) = fcellKalman;
             trials_read(tr)=true;
@@ -304,17 +308,17 @@ for tr=1:length(inh_onset)
             if calculate_diff_image
                 img_trial = double(datafull(:,:,sv_frame_range));
                 img_baseline = (mean(img_trial(:,:,baseline_frame),3));
-                img_df(:,:,:,ind) = (img_trial(:,:,pre_inh-round(fps/2):pre_inh+round(fps)-1) -img_baseline);
+                img_df(:,:,:,ind) = int16(img_trial(:,:,pre_inh-round(fps/2):pre_inh+round(fps)-1) -img_baseline);
             end
             ind = ind+1;
         else
             trials_read(tr)=false;
-            fprintf('trial %d inh_frame(tr) was not included in tiff stack\n',tr)
+            fprintf('trial %d inh_frame was not included in tiff stack\n',tr)
 
         end
     else
         trials_read(tr)=false;
-        fprintf('trial %d inh_frame(tr) was not included in tiff stack\n',tr)
+        fprintf('trial %d inh_frame was not included in tiff stack\n',tr)
     end
     
 end
@@ -344,8 +348,49 @@ if calculate_diff_image
         title(OdorInfo.odors{i})
     end
     saveas(fig55,strcat(fieldname, 'diff_images', '.png'))
-    %clear datafull img_trial img_baseline img_df
+    
+    %
+    fiji_descr = ['ImageJ=1.52p' newline ...
+                  'images=' num2str(size(img_df_percond,3) * size(img_df_percond,4)) newline ...
+                  'frames=' num2str(size(img_df_percond,3)) newline ...
+                  'channels=' num2str(size(img_df_percond,4)) newline ...
+                  'slices=1' newline ...
+                  'hyperstack=true' newline ...
+                  'mode=grayscale' newline ...
+                  'loop=false' newline ...
+                  'min=-32768.0' newline ...
+                  'max=32767.0'];  % Ensure max is within int16 range
+    
+    % Create a Tiff object
+    t = Tiff(strcat(fieldname, '_diff_movies', '.tif'), 'w');
+    % Define the tag structure for the TIFF file
+    tagstruct.ImageLength = size(img_df_percond, 1);
+    tagstruct.ImageWidth = size(img_df_percond, 2);
+    tagstruct.Photometric = Tiff.Photometric.MinIsBlack;
+    tagstruct.BitsPerSample = 16;
+    tagstruct.SamplesPerPixel = 1;
+    tagstruct.Compression = Tiff.Compression.LZW;
+    tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
+    tagstruct.SampleFormat = Tiff.SampleFormat.Int;  % For int16 data
+    tagstruct.ImageDescription = fiji_descr;
+    
+    % Iterate over frames (T dimension) and channels (C dimension) to write the data
+    for t_idx = 1:size(img_df_percond, 3)
+        for c_idx = 1:size(img_df_percond, 4)
+            t.setTag(tagstruct);
+            t.write(int16(img_df_percond(:,:,t_idx,c_idx)));  % Convert data to int16 if necessary
+            t.writeDirectory();  % Save a new page in the TIFF file
+        end
+    end
+    
+    % Close the TIFF file
+    t.close();
+
 end
+
+
+
+%%
 %%
 if isplot
     Sniff_trial = -2*sniff(trials_read,:)./peak2peak(sniff(trials_read,:),2);
@@ -417,10 +462,44 @@ if isplot
     close all
 
     %
+    for j = 1:length(stim_cell)
+        cellid = stim_cell(j);
+        options.x_axis = framelim;
+        options.color_area = [128 193 219]./255;
+        options.color_line = 'r';
+        options.alpha = 0.5;
+        options.line_width =2;
+        options.error = 'sem';
+        fig7 = figure2('dffstim_cell');
+        for i = 1: size(OdorInfo.odors,1)
+            ii = index(i);
+            dff_singlecell = squeeze(dffKalman(cellid,:,OdorInfo.odorTrials{i}));
+
+            figure(fig7.Number)
+            subplot(p(1),p(2),ii)
+            plotareaerrorbar(dff_singlecell(:,:)', gcf, options)
+        %     plot(framelim, dff_singlecell(:,1:6)', 'LineWidth',2)
+            hold on
+            ylim(dfflim)
+            plot([1 1]*0, ylim, '--b', 'LineWidth',2)
+            plot([1 1]*odor_duration*fps, ylim, '--b','LineWidth',2)
+            plot(downsample((-pre:post-1),round(1000/fps))./round(1000/fps), mean(sniff_ds(:,OdorInfo.odorTrials{i}),2)*0.3-0.25, 'k', 'LineWidth',2)
+            hold off
+            title(OdorInfo.odors{i})
+            xlabel('#')
+            ylabel('\DeltaF/F_0')
+            xlim([-fps 2*fps])
+
+        end
+        %savefig(fig7, strcat(fieldname, '_DFFTrace_stim_cellIDsem_',num2str(cellid),'.fig'))
+        saveas(fig7, strcat(fieldname, '_DFFTrace_stim_cellIDsem_',num2str(cellid),'.png'))
+
+    end
+    close all
 
 end
 %% SAVE everything in workspace, it is usefull in some cases
-save(strcat(fieldname, '.mat'));
+%save(strcat(fieldname, '.mat'));
 
 %% Data format, I used it to share data with Jon and Saeed. My Python scripts are written based on this format
 Session.OdorResponse = {};
@@ -445,9 +524,6 @@ Session.Infos.imgwithROIs = img;
 Session.Infos.pre_inh = pre_inh;
 Session.Infos.post_inh = post_inh;
 Session.Infos.TrialsRead = trials_read;
-Session.datamean = datamean; 
-Session.data_time = data_time;
-Session.inhframe = inh_frame;
 Session.VoyeurData = Data;
 save(strcat(fieldname,'_S_v73.mat'), 'Session','-v7.3')
 disp("Saving DONE!!")
