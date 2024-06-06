@@ -132,10 +132,10 @@ if inh_realign && isWS
         framediff= find(diff(an(:,1))>2);  %% Frame trigger is channel 1
         wsFrameNumbers(i) = length(find(diff(framediff/20)>(0.8*1e3/fps)))+1;
     end
-    [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,pre,post,true,fps,wsFrameNumbers);
+[sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre',pre,'post',post,'inh_detect',true,'fps',fps,'wsFrameNumbers',wsFrameNumbers);
 elseif inh_realign
     
-    [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre', 2000,'post', 4000,'fps',30, 'inh_detect',inh_realign);
+    [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre', pre,'post', post,'fps',fps, 'inh_detect',inh_realign);
 else
     [sniff,frametrigger,Data,~]=read_sniff_frametrigger_trialinfo(h5_name,path_h5,pre,post,false,fps);
     sniff_smooth = sniff;
