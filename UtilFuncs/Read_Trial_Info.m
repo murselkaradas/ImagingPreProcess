@@ -355,13 +355,15 @@ Sniff=single(Sniff2);
 Voyeurdata.frametrigger = frame_trigger;
 Voyeurdata.fv_bin = fv_bin;
 Sniff_smooth = Sniff;
-for i=2:num_trial
-    bmObj = breathmetrics(-1*Sniff(i,:)', 1e3, 'rodentAirflow');
-    bmObj.estimateAllFeatures(1,'simple', 0, 1);
-    Sniff_smooth(i,:) = -1*bmObj.baselineCorrectedRespiration;
-    [~, index] = min(abs(bmObj.inhaleOnsets-2001));
-    Voyeurdata.pre_inhs{i} = bmObj.inhaleOnsets(1:index-1);
-    Voyeurdata.post_inhs{i} = bmObj.inhaleOnsets(index:end);
+if inh_detect
+  for i=2:num_trial
+      bmObj = breathmetrics(-1*Sniff(i,:)', 1e3, 'rodentAirflow');
+      bmObj.estimateAllFeatures(1,'simple', 0, 1);
+      Sniff_smooth(i,:) = -1*bmObj.baselineCorrectedRespiration;
+      [~, index] = min(abs(bmObj.inhaleOnsets-2001));
+      Voyeurdata.pre_inhs{i} = bmObj.inhaleOnsets(1:index-1);
+      Voyeurdata.post_inhs{i} = bmObj.inhaleOnsets(index:end);
+  end
 end
 cd(path_orig);
 

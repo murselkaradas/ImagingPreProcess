@@ -13,13 +13,18 @@ Ntrial = length(H5.trialNumber);
 if ~exist('trials_read','var')
     trials_read = logical(ones(1,Ntrial));
 end
-
+try
+    AOMpower = H5.AOMpower/1000;
+catch
+    warning('No AOM field in H5 file. Using Laser2 Amplitude_2');
+    AOMpower = H5.amplitude_2/1000;
+end
 if any(ismember(fields(H5), 'amplitude_1'))
     StimID = strings([Ntrial,1]);
     stimon = find(H5.amplitude_1 >0);
 %     lat = round((H5.laserontime(stimon) - H5.inh_onset(stimon))/latfactor)*latfactor;
     lat = round(H5.pulseOnsetDelay_1(stimon)/latfactor)*latfactor;
-    StimID(stimon) = strcat('-SL', num2str(lat, '%d'));
+    StimID(stimon) = strcat('-SL', num2str(lat, '%d'),num2str(AOMpower(stimon),'%d');
     
 end    
     
