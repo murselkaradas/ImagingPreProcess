@@ -125,8 +125,30 @@ if isWS
 
     % Load waveform data
     wsdata = loadDataFile(wsh5_name);
-    wsNtrials = size(fieldnames(wsdata), 1) - 1; % First field is header
-    AIchannelnames = deblank(string(cell2mat(wsdata.header.AIChannelNames)));
+    % Get all sweep fields and sort by numeric suffix
+    fn = fieldnames(wsdata);
+    isSweep = startsWith(fn, 'sweep_');
+    
+    rawNames = fn(isSweep);
+    nums = nan(size(rawNames));
+    keep = false(size(rawNames));
+    
+    for k = 1:numel(rawNames)
+        t = regexp(rawNames{k}, '^sweep_(\d+)$', 'tokens', 'once');
+        if ~isempty(t) && isfield(wsdata.(rawNames{k}), 'analogScans')
+            nums(k) = str2double(t{1});
+            keep(k) = true;
+        end
+    end
+    
+    sweepNames = rawNames(keep);
+    nums = nums(keep);
+    [~, order] = sort(nums);
+    sweepNames = sweepNames(order);
+    
+    wsNtrials = numel(sweepNames);
+    AIchannelnames = deblank(string((wsdata.header.AIChannelNames)));
+    %%AIchannelnames = deblank(string(cell2mat(wsdata.header.AIChannelNames)));
     FrameTriggerChannel = find(strcmp(AIchannelnames, 'FrameTrigger'));
     PIDChannel = find(strcmp(AIchannelnames, 'PID'));
     wsrate = wsdata.header.AcquisitionSampleRate / 1e3; % kHz
@@ -149,8 +171,9 @@ if isWS
 
     % Loop through trials
     for i = 1:wsNtrials
+        sname = sweepNames{i};
         % Load analog scans for the current trial
-        an = eval(sprintf('wsdata.sweep_%04d.analogScans', i));
+        an = wsdata.(sname).analogScans;
 
         % Find frame trigger locations (rising edges)
         framediff = find(diff(an(:, FrameTriggerChannel)) > 2.0); % Detect rising edges
@@ -195,19 +218,22 @@ if isWS
     trial_boundaries = zeros(wsNtrials, 1); % Store start index of each trial in concatenated data
     Ttotal = 0;
     for jj = 1:wsNtrials
-        trial_indices = all_frame_trigger_indices{jj} + cumulative_samples; % Offset indices by previous trials
+        sname = sweepNames{jj};
+        trial_indices = all_frame_trigger_indices{jj} + cumulative_samples;
         all_frame_trigger_indices_concat = [all_frame_trigger_indices_concat trial_indices];
-        all_frame_trigger_times_concat = [all_frame_trigger_times_concat all_frame_trigger_times{jj} + Ttotal];
-        trial_boundaries(jj) = cumulative_samples + 1; % Mark start of trial
-        Nsample = size(eval(sprintf('wsdata.sweep_%04d.analogScans', jj)), 1);
+        all_frame_trigger_times_concat  = [all_frame_trigger_times_concat  all_frame_trigger_times{jj} + Ttotal];
+        trial_boundaries(jj) = cumulative_samples + 1;
+    
+        Nsample = size(wsdata.(sname).analogScans, 1);
         Ttotal = Ttotal + Nsample / (wsrate * 1e3);
-        cumulative_samples = cumulative_samples + Nsample; % Update cumulative samples
+        cumulative_samples = cumulative_samples + Nsample;
     end
      PID_concat = vertcat(all_PID_signals{:});
      PIDs = downsample(PID_concat,wsrate);
      PIDs = PIDs - min(PIDs);
      frametriggersWS = all_frame_trigger_times_concat;
 end
+%%
 if inh_realign && isWS
     [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre',pre,'post',post,'inh_detect', true,'fps',fps,'wsFrameNumbers',wsFrameNumbers);
 elseif isWS
