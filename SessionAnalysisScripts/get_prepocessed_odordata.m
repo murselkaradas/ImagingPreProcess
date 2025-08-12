@@ -103,37 +103,110 @@ cellMask_vec=reshape(cellMask_sep,[],size(cellMask_sep,3));
 cellMask_vec=cellMask_vec./sum(cellMask_vec);
 num_cell=size(cellMask_vec,2);
 %%
-if inh_realign && isWS
-    WsH5name = dir([strcat(WSfieldname ,'*.h5')]);
-    path_wsh5=WsH5name.folder;
-    wsh5_name= WsH5name.name;
+if isWS
+    % Load the HDF5 file
+    WsH5name = dir([strcat(WSfieldname, '*.h5')]);
+    path_wsh5 = WsH5name.folder;
+    wsh5_name = WsH5name.name;
 
+    % Load waveform data
     wsdata = loadDataFile(wsh5_name);
-    wsNtrials = size(fieldnames(wsdata),1)- 1; % First field is header
+    wsNtrials = size(fieldnames(wsdata), 1) - 1; % First field is header
     AIchannelnames = deblank(string(cell2mat(wsdata.header.AIChannelNames)));
     FrameTriggerChannel = find(strcmp(AIchannelnames, 'FrameTrigger'));
-    PMTgateChannel = find(strcmp(AIchannelnames, 'FrameSync_DMD'));
-    FVChannel = find(strcmp(AIchannelnames, 'FinalValve'));
     PIDChannel = find(strcmp(AIchannelnames, 'PID'));
-    ShutterChannel = find(strcmp(AIchannelnames, 'LaserShutter'));
+    wsrate = wsdata.header.AcquisitionSampleRate / 1e3; % kHz
 
-    wsrate = wsdata.header.AcquisitionSampleRate/1e3;
-
-    wsFrameNumbers = zeros(wsNtrials,1);
-    ws_stimframe = zeros(wsNtrials,1);
-    n=20;
-    for i = 1:wsNtrials
-        an = eval(sprintf('wsdata.sweep_%04d.analogScans',i));
-        framediff= find(diff(an(:,1))>2);  %% Frame trigger is channel 1
-        wsFrameNumbers(i) = length(find(diff(framediff/20)>(0.8*1e3/fps)))+1;
+    % Validate channels
+    if isempty(FrameTriggerChannel)
+        error('FrameTrigger channel not found in AIChannelNames');
     end
-[sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre',pre,'post',post,'inh_detect',true,'fps',fps,'wsFrameNumbers',wsFrameNumbers);
+    if isempty(PIDChannel)
+        warning('PID channel not found in AIChannelNames. PID data will not be extracted.');
+    end
+
+    % Initialize arrays
+    all_PID_signals = {}; % store PID signals per trial
+    all_frame_trigger_indices = {}; % Cell array to store indices per trial
+    all_frame_trigger_times = {}; % Cell array to store times per trial
+    wsFrameNumbers = zeros(wsNtrials, 1);
+    ws_stimframe = zeros(wsNtrials, 1);
+    n = 20;
+
+    % Loop through trials
+    for i = 1:wsNtrials
+        % Load analog scans for the current trial
+        an = eval(sprintf('wsdata.sweep_%04d.analogScans', i));
+
+        % Find frame trigger locations (rising edges)
+        framediff = find(diff(an(:, FrameTriggerChannel)) > 2.0); % Detect rising edges
+        minSpacing = round(wsrate/fps*1e3/2); % Minimum number of samples allowed between triggers
+
+        % Clean close triggers
+        cleaned_framediff = framediff(1);
+        for kk = 2:length(framediff)
+            if (framediff(kk) - cleaned_framediff(end)) >= minSpacing
+                cleaned_framediff(end+1) = framediff(kk);
+            end
+        end
+        framediff = cleaned_framediff;
+        frame_trigger_indices = framediff + 1; % Adjust for diff offset (rising edge starts at next sample)
+
+        % Convert indices to time (in seconds)
+        frame_trigger_times = frame_trigger_indices / (wsrate * 1e3); % wsrate in kHz, convert to seconds
+
+        % Store FrameTrigger results
+        all_frame_trigger_indices{i} = frame_trigger_indices;
+        all_frame_trigger_times{i} = frame_trigger_times;
+
+        % Read PID data if available
+        if ~isempty(PIDChannel)
+            PID_signal = an(:, PIDChannel);
+            all_PID_signals{i} = PID_signal;
+        else
+            all_PID_signals{i} = [];
+        end
+
+        % Existing frame number calculation
+        wsFrameNumbers(i) = length(find(diff(framediff / 20) > (0.8 * 1e3 / fps))) + 1;
+        if wsFrameNumbers(i) ~= length(frame_trigger_times)
+            fprintf('ActualFrames: %d but You detected: %d \n', wsFrameNumbers(i), length(frame_trigger_times));
+        end
+    end
+
+    % Optional: Concatenate all frame trigger indices/times across trials with trial boundaries
+    cumulative_samples = 0;
+    all_frame_trigger_indices_concat = [];
+    all_frame_trigger_times_concat = [];
+    trial_boundaries = zeros(wsNtrials, 1); % Store start index of each trial in concatenated data
+    Ttotal = 0;
+    for jj = 1:wsNtrials
+        trial_indices = all_frame_trigger_indices{jj} + cumulative_samples; % Offset indices by previous trials
+        all_frame_trigger_indices_concat = [all_frame_trigger_indices_concat trial_indices];
+        all_frame_trigger_times_concat = [all_frame_trigger_times_concat all_frame_trigger_times{jj} + Ttotal];
+        trial_boundaries(jj) = cumulative_samples + 1; % Mark start of trial
+        Nsample = size(eval(sprintf('wsdata.sweep_%04d.analogScans', jj)), 1);
+        Ttotal = Ttotal + Nsample / (wsrate * 1e3);
+        cumulative_samples = cumulative_samples + Nsample; % Update cumulative samples
+    end
+     PID_concat = vertcat(all_PID_signals{:});
+     PIDs = downsample(PID_concat,wsrate);
+     PIDs = PIDs - min(PIDs);
+     frametriggersWS = all_frame_trigger_times_concat;
+end
+
+%%
+if inh_realign && isWS
+    [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre',pre,'post',post,'inh_detect', true,'fps',fps,'wsFrameNumbers',wsFrameNumbers);
+elseif isWS
+disp("No inh. realign!")
+    [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre',pre,'post',post,'inh_detect',false ,'fps',fps,'wsFrameNumbers',wsFrameNumbers);
 elseif inh_realign
-    
-    [sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,'pre', pre,'post', post,'fps',fps, 'inh_detect',inh_realign);
+      
+[sniff,sniff_smooth,frame_trigger_trial,frametrigger,Data,~]=Read_Trial_Info(h5_name,path_h5,pre,post,true,fps,[]);
 else
-    [sniff,frametrigger,Data,~]=read_sniff_frametrigger_trialinfo(h5_name,path_h5,pre,post,false,fps);
-    sniff_smooth = sniff;
+      [sniff,frametrigger,Data,~]=read_sniff_frametrigger_trialinfo(h5_name,path_h5,pre,post,false,fps);
+      sniff_smooth = sniff;
 
 end
 odor_duration = mean(Data.fvdur)/1e3;
@@ -193,7 +266,7 @@ figure(22);imagesc(img);CenterFromRoiMasks(cellMask1,1:num_cell,opt);axis square
 savefig(strcat(fieldname, 'ROI', '.fig'))
 saveas(figure(22),strcat(fieldname, 'ROI', '.png'))
 options.overwrite = true;
-saveastiff(int16(datamean),strcat(fieldname,'_AVG.tif'), options)
+saveastiff(int16(datamean),strcat('AVG_',fieldname,'.tif'), options)
 disp('Avg tiff file has been saved');
 
 %% Find Included Trials
@@ -214,6 +287,7 @@ up_sampling_fac=(1000/fps);
 ind = 1;
 FKalman = [];
 dffKalman = [];
+PIDmeas = [];
 meanAllKalman = [];
 Inh_frame_all = [];
 for tr=1:length(inh_onset)
@@ -234,6 +308,7 @@ for tr=1:length(inh_onset)
             FKalman(:,:,ind) = fcellKalman;
             trials_read(tr) = true;
             meanAllKalman(:,ind) = (mean(fcellKalman(:,baseline_frame),2));
+            PIDmeas(:,ind) = PIDs(round(frametriggersWS(inh_frame)*1e3)-2000:round(frametriggersWS(inh_frame)*1e3)+4000);
             if calculate_diff_image
                 img_trial = double(datafull(:,:,sv_frame_range));
                 img_baseline = (mean(img_trial(:,:,baseline_frame),3));
@@ -291,6 +366,7 @@ if isplot
     fig4 = figure2('map');
     fig5 = figure2('dff');
     fig6 = figure2('dffstim_cell');
+    fig8 = figure2('PID');
     for i = 1: size(OdorInfo.odors,1)
         figure(fig4.Number)
         ii = index(i);
@@ -338,15 +414,28 @@ if isplot
         ylabel('\DeltaF/F_0')
         xlim([-fps 2*fps])
 
+        figure(fig8.Number)
+        subplot(p(1),p(2),ii)
+        plot( PIDmeas(:,OdorInfo.odorTrials{i}), 'LineWidth',2);
+        hold on
+        hold off
+        title(OdorInfo.odors{i})
+        xlabel('#')
+        ylabel('PID voltage')
+
+        
+
     end
     %savefig(fig6, strcat(fieldname, '_DFFTrace_stim_cellKalman', '.fig'))
     saveas(fig6, strcat(fieldname, '_DFFTrace_stim_cellKalman', '.png'))
+    saveas(fig8, strcat(fieldname, '_PID', '.png'))
+
     %savefig(fig5,strcat(fieldname, '_DFFTrace_StimKalman', '.fig'))
     saveas(fig5,strcat(fieldname, '_DFFTrace_Kalman', '.png'))
     %savefig(fig4,strcat(fieldname, '_DFFMAPKalman', '.fig'))
     saveas(fig4,strcat(fieldname, '_DFFMAPKalman', '.png'))
     %  SAVE all workspace
-    clear options opt option j k i fig1 fig2 fig3 fig4 fig5 fig6
+    clear options opt option j k i fig1 fig2 fig3 fig4 fig5 fig6 fig 8
     close all
 
     %
@@ -387,49 +476,6 @@ if isplot
 
 end
 
-%%% Read PID data
-Ntrials = sum(trials_read)
-PIDmeas = zeros(Ntrials,7*wsrate*1e3);
-kk = 1
-trials_read_2 = trials_read(2:end)
-for i = 1:wsNtrials
-    if trials_read(i)
-        an = eval(sprintf('wsdata.sweep_%04d.analogScans',i));
-        framediff= find(diff(an(:,1))>2);  %% Frame trigger is channel 1
-        FVdiff= find(diff(an(:,FVChannel))>2);  %% Frame trigger is channel 1
-        if isempty(FVdiff)
-            FVdiff1 = 65e3;
-        elseif ~isempty(FVdiff)
-           [M,I]= (min(abs(FVdiff)));
-           FVdiff1 = FVdiff(I);
-        else
-           FVdiff1 = FVdiff(1);
-        end
-        startPID = FVdiff1 - (wsdata.header.AcquisitionSampleRate)*3;
-        endPID = FVdiff1 +(wsdata.header.AcquisitionSampleRate)*4;
-        if startPID<0
-            PIDmeas(kk,:) = vertcat(an(1,PIDChannel)*ones(abs(startPID)+1,1),an(1:endPID-1,PIDChannel));
-        else
-            PIDmeas(kk,:) = an(startPID:endPID-1,PIDChannel);
-        end
-        kk = kk + 1
-    end
-end
-
-fig3 = figure2('PID');
-for i = 1: size(OdorInfo.odors,1)
-    ii = index(i);
-    figure(fig3.Number)
-    subplot(p(1),p(2),ii)
-    pid_plot = downsample(PIDmeas(OdorInfo.odorTrials{i},:)',20);
-    plot(pid_plot, 'LineWidth',2)
-    title(OdorInfo.odors{i})
-    xlabel('#')
-    ylabel('PID_voltage')
-    legend()
-end
-saveas(fig3,strcat(fieldname, '_PID', '.png'))
-
 %% SAVE everything in workspace, it is usefull in some cases
 save(strcat(fieldname, '.mat'));
 
@@ -438,11 +484,13 @@ Session.OdorResponse = {};
 Session.F= Fluo_cell_Kalman';
 Session.blockTrials = {};
 Session.fieldname = fieldname;
+ Session.PIDResponse = {};
 for i = 1: size(OdorInfo.odors,1)
     Session.OdorResponse{i} = permute(dffKalman(:,:,OdorInfo.odorTrials{i}),[2,1,3]);
     Session.blockTrials{i} = ones(length(OdorInfo.odorTrials{i}),1);
     if exist('PIDmeas','var')
-        Session.PID{i} = downsample(PIDmeas(OdorInfo.odorTrials{i},:)',20);
+        Session.PIDs_all = PIDmeas;
+        Session.PIDResponse{i} = PIDmeas(:,OdorInfo.odorTrials{i});
     end
 end
 if calculate_diff_image
@@ -453,7 +501,7 @@ Session.OdorTrials = OdorInfo.odorTrials;
 Session.Sniffs = Sniff_trial';
 Session.CellMask = cellMask_vec;
 Session.InhFrames = Inh_frame_all;
-Session.Infos.OdorDuration = OdorDuration;
+Session.Infos.OdorDuration = Odor_duration;
 
 Session.Infos.fps = fps;
 Session.Infos.ImgFormat = img_format;
